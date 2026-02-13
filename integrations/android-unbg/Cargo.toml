@@ -1,0 +1,14 @@
+[package]
+name = "android-unbg"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lib]
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+unbg-core = { path = "../../crates/unbg-core" }
+unbg-uniffi = { path = "../../crates/unbg-uniffi" }

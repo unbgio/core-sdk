@@ -1,0 +1,38 @@
+[workspace]
+members = [
+    "apps/unbg-cli",
+    "crates/unbg-core",
+    "crates/unbg-model-registry",
+    "crates/unbg-installer",
+    "crates/unbg-runtime-ort",
+    "crates/unbg-image",
+    "crates/unbg-bench",
+    "crates/unbg-telemetry",
+    "crates/unbg-uniffi",
+    "integrations/tauri-plugin-unbg",
+    "integrations/android-unbg",
+    "integrations/ios-unbg",
+    "apps/smoke-tests",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "0.1.0"
+
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+dirs = "6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+sha2 = "0.10"
+hex = "0.4"
+tempfile = "3"
+walkdir = "2"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+ndarray = "0.16"
+uniffi = "0.30"

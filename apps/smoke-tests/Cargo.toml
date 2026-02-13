@@ -1,0 +1,14 @@
+[package]
+name = "smoke-tests"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde_json.workspace = true
+image.workspace = true
+unbg-core = { path = "../../crates/unbg-core" }
+tauri-plugin-unbg = { path = "../../integrations/tauri-plugin-unbg" }
+android-unbg = { path = "../../integrations/android-unbg" }
+ios-unbg = { path = "../../integrations/ios-unbg" }

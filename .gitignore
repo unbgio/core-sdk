@@ -1,0 +1,7 @@
+/target
+**/*.rs.bk
+integrations/android-unbg/dist/
+integrations/ios-unbg/dist/
+integrations/android-unbg/.gradle/
+integrations/tauri-plugin-unbg/target
+integrations/tauri-plugin-unbg/node_modules

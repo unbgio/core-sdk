@@ -1,0 +1,19 @@
+[package]
+name = "unbg-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+dirs.workspace = true
+image.workspace = true
+serde_json.workspace = true
+walkdir.workspace = true
+regex = "1"
+unbg-core = { path = "../../crates/unbg-core" }
+unbg-telemetry = { path = "../../crates/unbg-telemetry" }
+unbg-runtime-ort = { path = "../../crates/unbg-runtime-ort" }
+unbg-installer = { path = "../../crates/unbg-installer" }
+unbg-model-registry = { path = "../../crates/unbg-model-registry" }

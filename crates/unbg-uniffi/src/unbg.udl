@@ -1,0 +1,31 @@
+namespace unbg {};
+
+dictionary FfiRemoveBackgroundRequest {
+  bytes image_bytes;
+  u32 width;
+  u32 height;
+  string model;
+  string? onnx_variant;
+  string? execution_provider;
+  string? gpu_backend;
+  boolean? benchmark_provider;
+  string? model_dir;
+  u32? max_inference_pixels;
+};
+
+dictionary FfiRemoveBackgroundResponse {
+  string model_used;
+  u32 width;
+  u32 height;
+  bytes mask_png;
+  string provider_selected;
+  string? backend_selected;
+  boolean fallback_used;
+};
+
+interface UnbgApi {
+  constructor();
+  string remove_background_v1_json(string request_json);
+  string default_model_dir_string();
+  string supported_model_aliases_json();
+};

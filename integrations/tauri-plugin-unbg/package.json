@@ -1,0 +1,17 @@
+{
+  "name": "@unbg/tauri-plugin-unbg",
+  "version": "0.1.0",
+  "description": "Typed Tauri frontend client for UNBG plugin",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}

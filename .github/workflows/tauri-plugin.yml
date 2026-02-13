@@ -1,0 +1,66 @@
+name: tauri-plugin
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "tauri-v*"
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      UNBG_SIGNING_KEY_B64: ${{ secrets.UNBG_SIGNING_KEY_B64 || '' }}
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux system deps
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - name: Build tauri plugin crate
+        run: cargo build -p tauri-plugin-unbg --features tauri-plugin --release
+      - name: Test tauri plugin crate
+        env:
+          UNBG_ALLOW_PLACEHOLDER: "1"
+        run: cargo test -p tauri-plugin-unbg --features tauri-plugin
+      - name: Package plugin artifact
+        shell: bash
+        run: |
+          mkdir -p dist
+          ARCHIVE="dist/tauri-plugin-${{ matrix.os }}.zip"
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            powershell -Command "Compress-Archive -Path integrations/tauri-plugin-unbg/src/* -DestinationPath $ARCHIVE"
+          else
+            zip -r "$ARCHIVE" integrations/tauri-plugin-unbg/src integrations/tauri-plugin-unbg/package.json integrations/tauri-plugin-unbg/tsconfig.json
+          fi
+      - name: Generate manifest
+        shell: bash
+        run: bash scripts/release-manifest.sh dist/release-manifest-${{ matrix.os }}.json dist/tauri-plugin-${{ matrix.os }}.zip
+      - name: Sign artifacts
+        if: ${{ env.UNBG_SIGNING_KEY_B64 != '' }}
+        shell: bash
+        run: bash scripts/sign-artifacts.sh dist/tauri-plugin-${{ matrix.os }}.zip dist/release-manifest-${{ matrix.os }}.json
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/tauri-plugin-${{ matrix.os }}.zip
+            dist/release-manifest-${{ matrix.os }}.json
+      - name: Upload plugin artifact bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-plugin-${{ matrix.os }}
+          path: |
+            dist/tauri-plugin-${{ matrix.os }}.zip
+            dist/release-manifest-${{ matrix.os }}.json
+            dist/*.sig

@@ -1,0 +1,111 @@
+name: cli-release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build-cli-assets:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset_os: linux
+            arch: x86_64
+            source_bin_name: unbg-cli
+            output_bin_name: unbg
+            ort_archive_url: https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-linux-x64-1.23.2.tgz
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset_os: windows
+            arch: x86_64
+            source_bin_name: unbg-cli.exe
+            output_bin_name: unbg.exe
+            ort_archive_url: https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-win-x64-1.23.2.zip
+          - runner: macos-latest
+            target: x86_64-apple-darwin
+            asset_os: macos
+            arch: x86_64
+            source_bin_name: unbg-cli
+            output_bin_name: unbg
+            ort_archive_url: https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-osx-x86_64-1.23.2.tgz
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+            asset_os: macos
+            arch: aarch64
+            source_bin_name: unbg-cli
+            output_bin_name: unbg
+            ort_archive_url: https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-osx-arm64-1.23.2.tgz
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build CLI
+        run: cargo build -p unbg-cli --release --target ${{ matrix.target }}
+      - name: Package archive
+        shell: pwsh
+        run: |
+          $assetName = "unbg-${{ matrix.asset_os }}-${{ matrix.arch }}"
+          $stageDir = Join-Path $PWD "dist/$assetName"
+          New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
+          $releaseDir = Join-Path $PWD "target/${{ matrix.target }}/release"
+          $depsDir = Join-Path $releaseDir "deps"
+          $binSource = Join-Path $releaseDir "${{ matrix.source_bin_name }}"
+          Copy-Item -Path $binSource -Destination (Join-Path $stageDir "${{ matrix.output_bin_name }}") -Force
+          $runtimePatterns = @("onnxruntime*.dll", "libonnxruntime*.so*", "libonnxruntime*.dylib")
+          $searchRoots = @($releaseDir, $depsDir)
+          foreach ($root in $searchRoots) {
+            if (-not (Test-Path $root)) { continue }
+            foreach ($pattern in $runtimePatterns) {
+              Get-ChildItem -Path $root -Filter $pattern -File -ErrorAction SilentlyContinue | ForEach-Object {
+                Copy-Item -Path $_.FullName -Destination (Join-Path $stageDir $_.Name) -Force
+              }
+            }
+          }
+          $ortArchive = Join-Path $PWD "dist/onnxruntime-archive"
+          $ortExtract = Join-Path $PWD "dist/onnxruntime-extract"
+          Write-Host "Downloading ONNX Runtime archive: ${{ matrix.ort_archive_url }}"
+          Invoke-WebRequest -Uri "${{ matrix.ort_archive_url }}" -OutFile $ortArchive
+          New-Item -ItemType Directory -Path $ortExtract -Force | Out-Null
+          if ("${{ matrix.ort_archive_url }}" -like "*.zip") {
+            Expand-Archive -Path $ortArchive -DestinationPath $ortExtract -Force
+          } else {
+            tar -xzf $ortArchive -C $ortExtract
+          }
+          Get-ChildItem -Path $ortExtract -Recurse -File | Where-Object {
+            $_.Name -like "onnxruntime*.dll" -or $_.Name -like "libonnxruntime*.so*" -or $_.Name -like "libonnxruntime*.dylib"
+          } | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination (Join-Path $stageDir $_.Name) -Force
+          }
+          Compress-Archive -Path "$stageDir/*" -DestinationPath "dist/$assetName.zip" -Force
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: unbg-cli-${{ matrix.asset_os }}-${{ matrix.arch }}
+          path: dist/*.zip
+
+  publish-cli-assets:
+    needs: build-cli-assets
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download packaged assets
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Attach assets to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip

@@ -1,0 +1,68 @@
+name: android-artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "android-v*"
+
+jobs:
+  build-android-aar:
+    runs-on: ubuntu-latest
+    env:
+      UNBG_SIGNING_KEY_B64: ${{ secrets.UNBG_SIGNING_KEY_B64 || '' }}
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: android-actions/setup-android@v3
+      - name: Install Android NDK
+        run: sdkmanager "ndk;27.2.12479018"
+      - name: Configure Android linker toolchain
+        run: |
+          LLVM_BIN="$ANDROID_SDK_ROOT/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$LLVM_BIN/aarch64-linux-android21-clang" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$LLVM_BIN/armv7a-linux-androideabi21-clang" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER=$LLVM_BIN/x86_64-linux-android21-clang" >> "$GITHUB_ENV"
+          echo "CC_aarch64_linux_android=$LLVM_BIN/aarch64-linux-android21-clang" >> "$GITHUB_ENV"
+          echo "CC_armv7_linux_androideabi=$LLVM_BIN/armv7a-linux-androideabi21-clang" >> "$GITHUB_ENV"
+          echo "CC_x86_64_linux_android=$LLVM_BIN/x86_64-linux-android21-clang" >> "$GITHUB_ENV"
+          echo "AR_aarch64_linux_android=$LLVM_BIN/llvm-ar" >> "$GITHUB_ENV"
+          echo "AR_armv7_linux_androideabi=$LLVM_BIN/llvm-ar" >> "$GITHUB_ENV"
+          echo "AR_x86_64_linux_android=$LLVM_BIN/llvm-ar" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_AR=$LLVM_BIN/llvm-ar" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_AR=$LLVM_BIN/llvm-ar" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_X86_64_LINUX_ANDROID_AR=$LLVM_BIN/llvm-ar" >> "$GITHUB_ENV"
+      - name: Install uniffi-bindgen
+        run: cargo install uniffi --version 0.30.0 --features cli --bin uniffi-bindgen --locked
+      - name: Add Android Rust targets
+        run: |
+          rustup target add aarch64-linux-android
+          rustup target add armv7-linux-androideabi
+          rustup target add x86_64-linux-android
+      - name: Build AAR
+        run: bash scripts/build-android.sh
+      - name: Generate manifest
+        run: bash scripts/release-manifest.sh integrations/android-unbg/dist/aar/release-manifest.json integrations/android-unbg/dist/aar/unbg-android.aar
+      - name: Sign artifacts
+        if: ${{ env.UNBG_SIGNING_KEY_B64 != '' }}
+        run: bash scripts/sign-artifacts.sh integrations/android-unbg/dist/aar/unbg-android.aar integrations/android-unbg/dist/aar/release-manifest.json
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            integrations/android-unbg/dist/aar/unbg-android.aar
+            integrations/android-unbg/dist/aar/release-manifest.json
+      - name: Upload AAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: unbg-android-aar
+          path: |
+            integrations/android-unbg/dist/aar/unbg-android.aar
+            integrations/android-unbg/dist/aar/release-manifest.json
+            integrations/android-unbg/dist/aar/*.sig

@@ -1,0 +1,54 @@
+name: ios-artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "ios-v*"
+
+jobs:
+  build-ios-xcframework:
+    runs-on: macos-latest
+    env:
+      UNBG_SIGNING_KEY_B64: ${{ secrets.UNBG_SIGNING_KEY_B64 || '' }}
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install uniffi-bindgen
+        run: cargo install uniffi --version 0.30.0 --features cli --bin uniffi-bindgen --locked
+      - name: Add Apple Rust targets
+        run: |
+          rustup target add aarch64-apple-ios
+          rustup target add aarch64-apple-ios-sim
+          rustup target add x86_64-apple-ios
+      - name: Build XCFramework
+        run: bash scripts/build-ios.sh
+      - name: Archive XCFramework
+        run: |
+          cd integrations/ios-unbg/dist
+          ditto -c -k --sequesterRsrc --keepParent UNBG.xcframework UNBG.xcframework.zip
+      - name: Generate manifest
+        run: bash scripts/release-manifest.sh integrations/ios-unbg/dist/release-manifest.json integrations/ios-unbg/dist/UNBG.xcframework.zip
+      - name: Sign artifacts
+        if: ${{ env.UNBG_SIGNING_KEY_B64 != '' }}
+        run: bash scripts/sign-artifacts.sh integrations/ios-unbg/dist/UNBG.xcframework.zip integrations/ios-unbg/dist/release-manifest.json
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            integrations/ios-unbg/dist/UNBG.xcframework.zip
+            integrations/ios-unbg/dist/release-manifest.json
+      - name: Upload XCFramework artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: unbg-ios-xcframework
+          path: |
+            integrations/ios-unbg/dist/UNBG.xcframework
+            integrations/ios-unbg/dist/UNBG.xcframework.zip
+            integrations/ios-unbg/dist/release-manifest.json
+            integrations/ios-unbg/dist/*.sig

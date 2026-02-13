@@ -1,0 +1,24 @@
+{
+  "tauri_remove_command": "plugin:unbg|tauri_remove_background_command",
+  "request_fields": [
+    "image_bytes",
+    "width",
+    "height",
+    "model",
+    "onnx_variant",
+    "execution_provider",
+    "gpu_backend",
+    "benchmark_provider",
+    "model_dir",
+    "max_inference_pixels"
+  ],
+  "response_fields": [
+    "model_used",
+    "width",
+    "height",
+    "mask_png",
+    "provider_selected",
+    "backend_selected",
+    "fallback_used"
+  ]
+}

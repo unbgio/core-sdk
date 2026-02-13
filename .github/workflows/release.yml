@@ -1,0 +1,42 @@
+name: release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release-metadata:
+    runs-on: ubuntu-latest
+    env:
+      UNBG_SIGNING_KEY_B64: ${{ secrets.UNBG_SIGNING_KEY_B64 || '' }}
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build source archive
+        run: |
+          mkdir -p dist
+          git archive --format=zip --output=dist/unbg-source.zip HEAD
+      - name: Generate release manifest
+        run: bash scripts/release-manifest.sh dist/release-manifest.json dist/unbg-source.zip
+      - name: Sign release metadata
+        if: ${{ env.UNBG_SIGNING_KEY_B64 != '' }}
+        run: bash scripts/sign-artifacts.sh dist/unbg-source.zip dist/release-manifest.json
+      - name: Attest release metadata provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/unbg-source.zip
+            dist/release-manifest.json
+      - name: Upload release metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-metadata
+          path: |
+            dist/unbg-source.zip
+            dist/release-manifest.json
+            dist/*.sig
