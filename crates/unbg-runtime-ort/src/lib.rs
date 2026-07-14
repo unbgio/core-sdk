@@ -667,6 +667,7 @@ fn gpu_candidates(pref: GpuBackendPreference) -> Vec<ProviderChoice> {
     providers
 }
 
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 fn cuda_likely_available() -> bool {
     #[cfg(target_os = "windows")]
     {
@@ -695,10 +696,6 @@ fn cuda_likely_available() -> bool {
             "/usr/lib/wsl/lib/libcuda.so.1",
         ];
         candidates.iter().any(|p| Path::new(p).exists())
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
-    {
-        false
     }
 }
 
