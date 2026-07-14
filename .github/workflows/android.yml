@@ -16,16 +16,25 @@ jobs:
       attestations: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: android-actions/setup-android@v3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        with:
+          distribution: temurin
+          java-version: 26
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+        with:
+          gradle-version: 9.6.1
+      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
       - name: Install Android NDK
-        run: sdkmanager "ndk;27.2.12479018"
+        run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "ndk;29.0.14206865"
       - name: Configure Android linker toolchain
         run: |
-          LLVM_BIN="$ANDROID_SDK_ROOT/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          LLVM_BIN="$ANDROID_SDK_ROOT/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/29.0.14206865" >> "$GITHUB_ENV"
           echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$LLVM_BIN/aarch64-linux-android21-clang" >> "$GITHUB_ENV"
           echo "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$LLVM_BIN/armv7a-linux-androideabi21-clang" >> "$GITHUB_ENV"
           echo "CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER=$LLVM_BIN/x86_64-linux-android21-clang" >> "$GITHUB_ENV"
@@ -39,7 +48,7 @@ jobs:
           echo "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_AR=$LLVM_BIN/llvm-ar" >> "$GITHUB_ENV"
           echo "CARGO_TARGET_X86_64_LINUX_ANDROID_AR=$LLVM_BIN/llvm-ar" >> "$GITHUB_ENV"
       - name: Install uniffi-bindgen
-        run: cargo install uniffi --version 0.30.0 --features cli --bin uniffi-bindgen --locked
+        run: cargo install uniffi --version 0.32.0 --features cli --bin uniffi-bindgen --locked
       - name: Add Android Rust targets
         run: |
           rustup target add aarch64-linux-android
@@ -53,13 +62,13 @@ jobs:
         if: ${{ env.UNBG_SIGNING_KEY_B64 != '' }}
         run: bash scripts/sign-artifacts.sh integrations/android-unbg/dist/aar/unbg-android.aar integrations/android-unbg/dist/aar/release-manifest.json
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: |
             integrations/android-unbg/dist/aar/unbg-android.aar
             integrations/android-unbg/dist/aar/release-manifest.json
       - name: Upload AAR artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unbg-android-aar
           path: |

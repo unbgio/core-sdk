@@ -8,6 +8,7 @@ version.workspace = true
 anyhow.workspace = true
 serde_json.workspace = true
 image.workspace = true
+tempfile.workspace = true
 unbg-core = { path = "../../crates/unbg-core" }
 tauri-plugin-unbg = { path = "../../integrations/tauri-plugin-unbg" }
 android-unbg = { path = "../../integrations/android-unbg" }

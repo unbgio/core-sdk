@@ -12,7 +12,8 @@ For a consumer-first setup (plugin registration, frontend call usage, and model 
 Build the typed TS client package:
 
 ```bash
-npm run build
+pnpm install --frozen-lockfile
+pnpm build
 ```
 
 Build Rust plugin crate (workspace root):
@@ -20,3 +21,7 @@ Build Rust plugin crate (workspace root):
 ```bash
 cargo build -p tauri-plugin-unbg --features tauri-plugin
 ```
+
+Provider benchmarking defaults to off so the application retains at most one
+large ONNX Runtime session. Model weights are governed by the separate terms
+summarized in `MODEL_LICENSES.md`.

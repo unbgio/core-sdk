@@ -17,6 +17,8 @@ scripts/build-ios.sh
 Output:
 
 - `integrations/ios-unbg/dist/UNBG.xcframework`
+- CI release artifact `UNBG-SDK.zip`, containing the XCFramework, generated
+  Swift bindings, typed facade, Swift package manifest, and podspec
 
 ## Consume in iOS app
 
@@ -24,9 +26,8 @@ Option A: drag `UNBG.xcframework` into Xcode and link it.
 
 Option B: CocoaPods with `UNBG.podspec` in this directory.
 
-## Generate Swift bindings
-
-Generate Swift bindings from `crates/unbg-uniffi/src/unbg.udl` using `uniffi-bindgen`.
+The build script generates the Swift bindings and embeds the C header/module
+map in the XCFramework. Consumers do not run `uniffi-bindgen`.
 
 ## Smoke check
 

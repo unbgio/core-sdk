@@ -3,13 +3,14 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use unbg_core::{
-    run_inference_with_telemetry, v1, CoreError, ErrorInfo, ExecutionProvider, GpuBackendPreference, InferenceRequest, ModelKind,
-    OnnxVariant, PlatformTarget, RuntimeConfig, RuntimePolicy,
+    run_inference_with_telemetry, v1, CoreError, ErrorInfo, ExecutionProvider,
+    GpuBackendPreference, InferenceRequest, ModelKind, OnnxVariant, PlatformTarget, RuntimeConfig,
+    RuntimePolicy,
 };
-use unbg_image::{estimate_rgba_bytes, ImageSize};
+use unbg_image::{estimate_rgba_bytes, inspect_encoded_image};
 use unbg_model_registry::default_model_dir;
-use unbg_telemetry::sink_from_env;
 use unbg_runtime_ort::LocalOrtBackend;
+use unbg_telemetry::sink_from_env;
 
 uniffi::setup_scaffolding!();
 
@@ -40,14 +41,20 @@ pub struct FfiRemoveBackgroundResponse {
 
 #[derive(Debug, Error, uniffi::Error)]
 pub enum FfiError {
-    #[error("invalid-argument")]
-    InvalidArgument,
-    #[error("inference")]
-    Inference,
+    #[error("invalid argument: {0}")]
+    InvalidArgument(String),
+    #[error("inference failed: {0}")]
+    Inference(String),
 }
 
 #[derive(uniffi::Object)]
 pub struct UnbgApi;
+
+impl Default for UnbgApi {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[uniffi::export]
 impl UnbgApi {
@@ -59,19 +66,31 @@ impl UnbgApi {
     pub fn remove_background_v1_json(&self, request_json: String) -> String {
         let request: v1::RemoveBackgroundRequest = match serde_json::from_str(&request_json) {
             Ok(request) => request,
-            Err(_) => return "{\"code\":\"invalid-argument\",\"message\":\"invalid request json\"}".to_string(),
+            Err(_) => {
+                return "{\"code\":\"invalid-argument\",\"message\":\"invalid request json\"}"
+                    .to_string()
+            }
         };
         match remove_background_v1(request) {
-            Ok(response) => serde_json::to_string(&response)
-                .unwrap_or_else(|_| "{\"code\":\"inference\",\"message\":\"response encode failed\"}".to_string()),
-            Err(err) => format!("{{\"code\":\"{}\",\"message\":\"{}\"}}", error_code(&err), err),
+            Ok(response) => serde_json::to_string(&response).unwrap_or_else(|_| {
+                "{\"code\":\"inference\",\"message\":\"response encode failed\"}".to_string()
+            }),
+            Err(err) => serde_json::json!({
+                "code": error_code(&err),
+                "message": err.to_string(),
+            })
+            .to_string(),
         }
     }
 
     pub fn default_model_dir_string(&self) -> String {
         match default_model_dir_string() {
             Ok(path) => path,
-            Err(err) => format!("{{\"code\":\"{}\",\"message\":\"{}\"}}", error_code(&err), err),
+            Err(err) => serde_json::json!({
+                "code": error_code(&err),
+                "message": err.to_string(),
+            })
+            .to_string(),
         }
     }
 
@@ -80,30 +99,50 @@ impl UnbgApi {
     }
 }
 
-pub fn remove_background(request: FfiRemoveBackgroundRequest) -> Result<FfiRemoveBackgroundResponse, FfiError> {
+pub fn remove_background(
+    request: FfiRemoveBackgroundRequest,
+) -> Result<FfiRemoveBackgroundResponse, FfiError> {
+    let actual_size = inspect_encoded_image(&request.image_bytes)
+        .map_err(|error| FfiError::InvalidArgument(error.to_string()))?;
+    if actual_size.width != request.width || actual_size.height != request.height {
+        return Err(FfiError::InvalidArgument(format!(
+            "declared dimensions {}x{} do not match image dimensions {}x{}",
+            request.width, request.height, actual_size.width, actual_size.height
+        )));
+    }
     let runtime_cfg = unbg_core::resolve_runtime_config(RuntimeConfig {
         model: request.model.clone(),
-        onnx_variant: request.onnx_variant.clone().unwrap_or_else(|| "fp16".to_string()),
-        execution_provider: request.execution_provider.clone().unwrap_or_else(|| "auto".to_string()),
-        gpu_backend: request.gpu_backend.clone().unwrap_or_else(|| "auto".to_string()),
-        benchmark_provider: request.benchmark_provider.unwrap_or(true),
+        onnx_variant: request
+            .onnx_variant
+            .clone()
+            .unwrap_or_else(|| "fp16".to_string()),
+        execution_provider: request
+            .execution_provider
+            .clone()
+            .unwrap_or_else(|| "auto".to_string()),
+        gpu_backend: request
+            .gpu_backend
+            .clone()
+            .unwrap_or_else(|| "auto".to_string()),
+        benchmark_provider: request.benchmark_provider.unwrap_or(false),
         model_dir: request.model_dir.clone(),
     });
     let backend = LocalOrtBackend::default();
-    let estimated_bytes = estimate_rgba_bytes(ImageSize {
-        width: request.width,
-        height: request.height,
-    });
+    let estimated_bytes = estimate_rgba_bytes(actual_size);
     let telemetry = sink_from_env();
     let telemetry_ref = telemetry.as_ref().map(|sink| sink.as_ref());
     let inference = run_inference_with_telemetry(
         &backend,
         &InferenceRequest {
             requested_model: parse_model_alias(&runtime_cfg.model)?,
-            onnx_variant: parse_onnx_variant_opt(Some(&runtime_cfg.onnx_variant))?.unwrap_or(OnnxVariant::Fp16),
-            execution_provider: parse_execution_provider_opt(Some(&runtime_cfg.execution_provider))?
-                .unwrap_or(ExecutionProvider::Auto),
-            gpu_backend: parse_gpu_backend_opt(Some(&runtime_cfg.gpu_backend))?.unwrap_or(GpuBackendPreference::Auto),
+            onnx_variant: parse_onnx_variant_opt(Some(&runtime_cfg.onnx_variant))?
+                .unwrap_or(OnnxVariant::Fp16),
+            execution_provider: parse_execution_provider_opt(Some(
+                &runtime_cfg.execution_provider,
+            ))?
+            .unwrap_or(ExecutionProvider::Auto),
+            gpu_backend: parse_gpu_backend_opt(Some(&runtime_cfg.gpu_backend))?
+                .unwrap_or(GpuBackendPreference::Auto),
             benchmark_provider: runtime_cfg.benchmark_provider,
             emit_mask_png: true,
             input_path: None,
@@ -143,7 +182,9 @@ pub fn supported_model_aliases() -> Vec<String> {
     ]
 }
 
-pub fn remove_background_v1(request: v1::RemoveBackgroundRequest) -> Result<v1::RemoveBackgroundResponse, FfiError> {
+pub fn remove_background_v1(
+    request: v1::RemoveBackgroundRequest,
+) -> Result<v1::RemoveBackgroundResponse, FfiError> {
     let out = remove_background(FfiRemoveBackgroundRequest {
         image_bytes: request.image_bytes,
         width: request.width,
@@ -168,7 +209,7 @@ pub fn remove_background_v1(request: v1::RemoveBackgroundRequest) -> Result<v1::
 }
 
 pub fn default_model_dir_string() -> Result<String, FfiError> {
-    let path = default_model_dir().map_err(|_err| FfiError::Inference)?;
+    let path = default_model_dir().map_err(|error| FfiError::Inference(error.to_string()))?;
     Ok(path.display().to_string())
 }
 
@@ -177,7 +218,9 @@ fn parse_model_alias(raw: &str) -> Result<ModelKind, FfiError> {
         "auto" => Ok(ModelKind::Auto),
         "fast" | "rmbg-1.4" => Ok(ModelKind::Rmbg14),
         "quality" | "rmbg-2.0" => Ok(ModelKind::Rmbg20),
-        _other => Err(FfiError::InvalidArgument),
+        other => Err(FfiError::InvalidArgument(format!(
+            "unknown model {other:?}"
+        ))),
     }
 }
 
@@ -189,7 +232,9 @@ fn parse_onnx_variant_opt(raw: Option<&str>) -> Result<Option<OnnxVariant>, FfiE
             "fp16" => Ok(Some(OnnxVariant::Fp16)),
             "fp32" => Ok(Some(OnnxVariant::Fp32)),
             "quantized" | "q8" => Ok(Some(OnnxVariant::Quantized)),
-            _other => Err(FfiError::InvalidArgument),
+            other => Err(FfiError::InvalidArgument(format!(
+                "unknown ONNX variant {other:?}"
+            ))),
         },
     }
 }
@@ -201,7 +246,9 @@ fn parse_execution_provider_opt(raw: Option<&str>) -> Result<Option<ExecutionPro
             "auto" => Ok(Some(ExecutionProvider::Auto)),
             "gpu" => Ok(Some(ExecutionProvider::Gpu)),
             "cpu" => Ok(Some(ExecutionProvider::Cpu)),
-            _other => Err(FfiError::InvalidArgument),
+            other => Err(FfiError::InvalidArgument(format!(
+                "unknown execution provider {other:?}"
+            ))),
         },
     }
 }
@@ -215,7 +262,9 @@ fn parse_gpu_backend_opt(raw: Option<&str>) -> Result<Option<GpuBackendPreferenc
             "cuda" => Ok(Some(GpuBackendPreference::Cuda)),
             "coreml" => Ok(Some(GpuBackendPreference::CoreML)),
             "metal" => Ok(Some(GpuBackendPreference::Metal)),
-            _other => Err(FfiError::InvalidArgument),
+            other => Err(FfiError::InvalidArgument(format!(
+                "unknown GPU backend {other:?}"
+            ))),
         },
     }
 }
@@ -223,8 +272,8 @@ fn parse_gpu_backend_opt(raw: Option<&str>) -> Result<Option<GpuBackendPreferenc
 fn map_core_error(err: CoreError) -> FfiError {
     let info: ErrorInfo = err.as_error_info();
     match info.code {
-        unbg_core::ErrorCode::MissingInput => FfiError::InvalidArgument,
-        _ => FfiError::Inference,
+        unbg_core::ErrorCode::MissingInput => FfiError::InvalidArgument(info.message),
+        _ => FfiError::Inference(info.message),
     }
 }
 
@@ -238,8 +287,7 @@ fn model_label(model: ModelKind) -> &'static str {
 
 fn error_code(err: &FfiError) -> &'static str {
     match err {
-        FfiError::InvalidArgument => "invalid-argument",
-        FfiError::Inference => "inference",
+        FfiError::InvalidArgument(_) => "invalid-argument",
+        FfiError::Inference(_) => "inference",
     }
 }
-

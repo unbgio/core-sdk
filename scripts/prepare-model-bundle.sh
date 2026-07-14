@@ -80,10 +80,34 @@ MODELS=()
 case "$PROFILE" in
   tauri-full)
     MODELS=("fast" "quality")
+    # The RMBG-2.0 model is gated on HuggingFace.
+    # We support either:
+    # - explicit token env var (HF_TOKEN by default), OR
+    # - a token cached by `hf auth login` in ~/.cache/huggingface/token (or $HF_HOME/token)
+    HF_HOME_DIR="${HF_HOME:-$HOME/.cache/huggingface}"
+    HF_TOKEN_FILE_1="$HF_HOME_DIR/token"
+    HF_TOKEN_FILE_2="$HOME/.cache/huggingface/token"
+    HF_TOKEN_FILE_3="$HOME/.huggingface/token"
     if [[ -z "${!HF_TOKEN_ENV:-}" ]]; then
-      echo "Profile '$PROFILE' requires gated model access." >&2
-      echo "Set token env var '$HF_TOKEN_ENV' before running this script." >&2
-      exit 1
+      CACHED_TOKEN_FILE=""
+      for candidate in "$HF_TOKEN_FILE_1" "$HF_TOKEN_FILE_2" "$HF_TOKEN_FILE_3"; do
+        if [[ -s "$candidate" ]]; then
+          CACHED_TOKEN_FILE="$candidate"
+          break
+        fi
+      done
+      if [[ -z "$CACHED_TOKEN_FILE" ]]; then
+        echo "Profile '$PROFILE' requires gated model access." >&2
+        echo "Set token env var '$HF_TOKEN_ENV' or run 'hf auth login' before running this script." >&2
+        exit 1
+      fi
+      CACHED_TOKEN="$(tr -d '\r\n' < "$CACHED_TOKEN_FILE")"
+      if [[ -z "$CACHED_TOKEN" ]]; then
+        echo "Cached Hugging Face token file is empty: $CACHED_TOKEN_FILE" >&2
+        exit 1
+      fi
+      printf -v "$HF_TOKEN_ENV" '%s' "$CACHED_TOKEN"
+      export "$HF_TOKEN_ENV"
     fi
     ;;
   mobile-lite)

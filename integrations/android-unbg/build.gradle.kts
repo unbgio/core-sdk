@@ -1,27 +1,34 @@
 plugins {
-    id("com.android.library")
-    kotlin("android")
+    id("com.android.library") version "9.2.1"
     id("maven-publish")
 }
 
 android {
     namespace = "com.unbg.sdk"
-    compileSdk = 34
+    compileSdk = 37
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         minSdk = 24
         consumerProguardFiles("consumer-rules.pro")
     }
 
-    sourceSets["main"].jniLibs.srcDir("dist/aar/jni")
-    sourceSets["main"].java.srcDir("generated")
+    publishing {
+        singleVariant("release")
+    }
+}
+
+androidComponents.onVariants { variant ->
+    variant.sources.jniLibs?.addStaticSourceDirectory("dist/aar/jni")
+    variant.sources.kotlin?.addStaticSourceDirectory("generated")
+    variant.sources.resources?.addStaticSourceDirectory("generated-resources")
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:2.2.20")
+    api("net.java.dev.jna:jna:5.19.1@aar")
 }
 
-val verifyGeneratedBindings by tasks.registering {
+val verifyGeneratedBindings = tasks.register("verifyGeneratedBindings") {
     doLast {
         val generated = file("generated")
         val hasKotlin = generated.walkTopDown().any { it.isFile && it.extension == "kt" }

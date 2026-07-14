@@ -16,7 +16,7 @@ object UnbgClient {
         val onnxVariant: String? = "fp16",
         val executionProvider: String? = "auto",
         val gpuBackend: String? = "auto",
-        val benchmarkProvider: Boolean? = true,
+        val benchmarkProvider: Boolean? = false,
         val modelDir: String? = null,
         val maxInferencePixels: UInt? = 1_500_000u
     )

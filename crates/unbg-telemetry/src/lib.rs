@@ -12,7 +12,9 @@ pub fn sink_from_env() -> Option<Box<dyn TelemetrySink>> {
     match mode.trim().to_ascii_lowercase().as_str() {
         "stdout" => Some(Box::new(StdoutSink)),
         "file" => {
-            let path = std::env::var("UNBG_TELEMETRY_FILE").ok().filter(|v| !v.trim().is_empty())?;
+            let path = std::env::var("UNBG_TELEMETRY_FILE")
+                .ok()
+                .filter(|v| !v.trim().is_empty())?;
             Some(Box::new(FileSink::new(PathBuf::from(path))))
         }
         "http" => {

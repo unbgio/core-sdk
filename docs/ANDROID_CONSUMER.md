@@ -29,6 +29,7 @@ Copy the AAR to your app `libs/` and add:
 ```kotlin
 dependencies {
     implementation(files("libs/unbg-android.aar"))
+    implementation("net.java.dev.jna:jna:5.19.1@aar")
 }
 ```
 
@@ -61,3 +62,5 @@ val result = UnbgClient.removeBackground(
 - `model = "fast"` is recommended for mobile packaging.
 - You can omit `modelDir` only if models are already installed in default runtime paths.
 - Keep the lockfile + model files together from bundle output.
+- Review `MODEL_LICENSES.md`; the mobile model bundle is not covered by the
+  SDK's MIT software license.

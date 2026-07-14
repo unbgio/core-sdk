@@ -1,0 +1,19 @@
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+*.a binary
+*.aar binary
+*.dll binary
+*.dylib binary
+*.gif binary
+*.ico binary
+*.jpg binary
+*.jpeg binary
+*.onnx binary
+*.png binary
+*.so binary
+*.tgz binary
+*.zip binary

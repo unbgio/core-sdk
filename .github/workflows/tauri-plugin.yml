@@ -19,48 +19,84 @@ jobs:
       attestations: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Enable pnpm
+        run: corepack enable
       - name: Install Linux system deps
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
       - name: Build tauri plugin crate
-        run: cargo build -p tauri-plugin-unbg --features tauri-plugin --release
+        run: cargo build -p tauri-plugin-unbg --features tauri-plugin --release --locked
       - name: Test tauri plugin crate
         env:
           UNBG_ALLOW_PLACEHOLDER: "1"
-        run: cargo test -p tauri-plugin-unbg --features tauri-plugin
+        run: cargo test -p tauri-plugin-unbg --features tauri-plugin --locked
+      - name: Build typed frontend client
+        run: pnpm --dir integrations/tauri-plugin-unbg install --frozen-lockfile && pnpm --dir integrations/tauri-plugin-unbg build
+      - name: Pack typed frontend client
+        run: pnpm --dir integrations/tauri-plugin-unbg pack --skip-manifest-obfuscation --pack-destination ../../dist
       - name: Package plugin artifact
-        shell: bash
+        shell: pwsh
         run: |
-          mkdir -p dist
-          ARCHIVE="dist/tauri-plugin-${{ matrix.os }}.zip"
-          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            powershell -Command "Compress-Archive -Path integrations/tauri-plugin-unbg/src/* -DestinationPath $ARCHIVE"
-          else
-            zip -r "$ARCHIVE" integrations/tauri-plugin-unbg/src integrations/tauri-plugin-unbg/package.json integrations/tauri-plugin-unbg/tsconfig.json
-          fi
+          $stage = "dist/tauri-plugin-${{ matrix.os }}"
+          New-Item -ItemType Directory -Path "$stage/crates", "$stage/integrations/tauri-plugin-unbg" -Force | Out-Null
+          Copy-Item "integrations/tauri-plugin-unbg/package-workspace.toml" "$stage/Cargo.toml" -Force
+          Copy-Item "Cargo.lock", "LICENSE", "MODEL_LICENSES.md" $stage -Force
+          @("unbg-core", "unbg-image", "unbg-model-registry", "unbg-runtime-ort", "unbg-telemetry") | ForEach-Object {
+            Copy-Item "crates/$_" "$stage/crates/$_" -Recurse -Force
+          }
+          $pluginStage = "$stage/integrations/tauri-plugin-unbg"
+          @("Cargo.toml", "build.rs", "package.json", "pnpm-lock.yaml", "README.md", "LICENSE", "MODEL_LICENSES.md", "tsconfig.json") | ForEach-Object {
+            Copy-Item "integrations/tauri-plugin-unbg/$_" $pluginStage -Force
+          }
+          @("src", "dist", "permissions") | ForEach-Object {
+            Copy-Item "integrations/tauri-plugin-unbg/$_" $pluginStage -Recurse -Force
+          }
+          $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP "unbg-tauri-package-target-${{ matrix.os }}"
+          # Prune the larger root workspace lock to this standalone artifact while
+          # retaining the exact dependency versions already resolved and built.
+          cargo metadata --manifest-path "$stage/Cargo.toml" --format-version 1 --offline | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Could not normalize the packaged workspace lockfile." }
+          cargo check --manifest-path "$stage/Cargo.toml" -p tauri-plugin-unbg --features tauri-plugin --locked --offline
+          if ($LASTEXITCODE -ne 0) { throw "Could not verify the packaged Rust workspace." }
+          Compress-Archive -Path "$stage/*" -DestinationPath "dist/tauri-plugin-${{ matrix.os }}.zip" -Force
+      - name: Verify extracted Rust artifact
+        shell: pwsh
+        run: |
+          $extract = Join-Path $env:RUNNER_TEMP "unbg-tauri-plugin-${{ matrix.os }}"
+          New-Item -ItemType Directory -Path $extract | Out-Null
+          Expand-Archive -Path "dist/tauri-plugin-${{ matrix.os }}.zip" -DestinationPath $extract
+          $manifest = Join-Path $extract "Cargo.toml"
+          cargo check --manifest-path $manifest -p tauri-plugin-unbg --features tauri-plugin --locked
       - name: Generate manifest
         shell: bash
-        run: bash scripts/release-manifest.sh dist/release-manifest-${{ matrix.os }}.json dist/tauri-plugin-${{ matrix.os }}.zip
+        run: bash scripts/release-manifest.sh dist/release-manifest-${{ matrix.os }}.json dist/tauri-plugin-${{ matrix.os }}.zip dist/*.tgz
       - name: Sign artifacts
         if: ${{ env.UNBG_SIGNING_KEY_B64 != '' }}
         shell: bash
-        run: bash scripts/sign-artifacts.sh dist/tauri-plugin-${{ matrix.os }}.zip dist/release-manifest-${{ matrix.os }}.json
+        run: bash scripts/sign-artifacts.sh dist/tauri-plugin-${{ matrix.os }}.zip dist/*.tgz dist/release-manifest-${{ matrix.os }}.json
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: |
             dist/tauri-plugin-${{ matrix.os }}.zip
             dist/release-manifest-${{ matrix.os }}.json
+            dist/*.tgz
       - name: Upload plugin artifact bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tauri-plugin-${{ matrix.os }}
           path: |
             dist/tauri-plugin-${{ matrix.os }}.zip
             dist/release-manifest-${{ matrix.os }}.json
             dist/*.sig
+            dist/*.tgz

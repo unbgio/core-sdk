@@ -17,10 +17,10 @@ unbg-core = { path = "../unbg-core" }
 unbg-image = { path = "../unbg-image" }
 unbg-model-registry = { path = "../unbg-model-registry" }
 unbg-telemetry = { path = "../unbg-telemetry" }
-unbg-runtime-ort = { path = "../unbg-runtime-ort" }
+unbg-runtime-ort = { path = "../unbg-runtime-ort", default-features = false }
 
 [build-dependencies]
 uniffi = { workspace = true, features = ["build"] }
 
 [package.metadata.unbg]
-uniffi_bindgen_version = "0.30.0"
+uniffi_bindgen_version = "0.32.0"

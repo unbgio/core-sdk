@@ -17,8 +17,8 @@ If you are integrating this SDK into an app, use these guides first:
 - `crates/unbg-core`: shared inference policy and core contracts.
 - `crates/unbg-model-registry`: model directory and lockfile types.
 - `crates/unbg-installer`: local model install and verification flow.
-- `crates/unbg-runtime-ort`: ONNX runtime integration surface (stubbed).
-- `crates/unbg-image`: image sizing helpers (placeholder utilities).
+- `crates/unbg-runtime-ort`: bounded ONNX Runtime inference and provider selection.
+- `crates/unbg-image`: shared encoded/decoded image validation and sizing helpers.
 - `crates/unbg-bench`: benchmark case definitions.
 - `crates/unbg-uniffi`: shared FFI-safe boundary for mobile bindings.
 - `integrations/tauri-plugin-unbg`: Tauri adapter over the shared core/runtime.
@@ -65,6 +65,8 @@ Optional environment overrides:
 - `UNBG_INSTALL_VERSION` (default: `latest`, or set a tag like `v0.1.0`)
 - `UNBG_INSTALL_DIR` (default: per-user bin directory)
 - `UNBG_BINARY_NAME` (default: `unbg` / `unbg.exe`)
+- `UNBG_INSTALL_SKIP_VERIFY=1` skips release checksum verification; use only
+  when intentionally installing an older/custom release without a checksum
 
 ## Model Bundle Prep
 
@@ -88,6 +90,25 @@ Recommended profiles:
 `rmbg-2.0` is gated and requires `HF_TOKEN` during install.
 Model aliases: `fast` -> `rmbg-1.4`, `quality` -> `rmbg-2.0`.
 
+## Licensing
+
+UNBG source code is MIT-licensed; see `LICENSE`. Model weights have separate
+upstream terms and are not covered by the software license. Both configured
+BRIA models require separate authorization for commercial use. Read
+`MODEL_LICENSES.md` before downloading or distributing a model bundle.
+
+## Runtime safety defaults
+
+- Encoded inputs are limited to 64 MiB, decoded inputs to 40 megapixels, and
+  each dimension to 16,384 pixels.
+- Declared image dimensions must match the encoded image header.
+- Automatic provider selection tries at most one platform GPU backend and then
+  CPU; only one ONNX Runtime session is retained process-wide.
+- Provider benchmarking is disabled by default because loading several large
+  sessions can exhaust process memory.
+- Model revisions and lockfile paths are validated before filesystem access;
+  only ONNX files recorded in the lockfile are eligible for inference.
+
 ## Integration Packaging
 
 - Android AAR: `scripts/build-android.sh`
@@ -100,6 +121,7 @@ CI workflows are defined under `.github/workflows/` for workspace checks plus Ta
 
 - API compatibility policy: `docs/API_COMPATIBILITY.md`
 - Security/release hygiene: `docs/SECURITY_RELEASE.md`
+- Private vulnerability reporting: `SECURITY.md`
 - Compatibility snapshot check: `python scripts/check-api-compat.py`
 - Artifact manifest generation: `scripts/release-manifest.sh`
 - Artifact signing helper: `scripts/sign-artifacts.sh`

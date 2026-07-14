@@ -2,16 +2,32 @@
   "name": "@unbg/tauri-plugin-unbg",
   "version": "0.1.0",
   "description": "Typed Tauri frontend client for UNBG plugin",
+  "license": "MIT",
   "type": "module",
+  "packageManager": "pnpm@11.13.0",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=11.13.0"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "sideEffects": false,
   "files": [
-    "dist"
+    "dist",
+    "MODEL_LICENSES.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "pnpm clean && tsc -p tsconfig.json",
+    "prepack": "pnpm build"
   },
   "devDependencies": {
-    "typescript": "^5.9.2"
+    "typescript": "^7.0.2"
   }
 }

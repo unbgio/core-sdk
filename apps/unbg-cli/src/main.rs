@@ -1,19 +1,20 @@
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
 use clap::{Args, Parser, Subcommand};
-use image::GenericImageView;
 use regex::Regex;
-use walkdir::WalkDir;
 use unbg_core::{
-    run_inference_with_telemetry, ExecutionProvider, GpuBackendPreference, InferenceRequest, ModelKind, OnnxVariant, PlatformTarget,
-    RuntimeConfig, RuntimePolicy,
+    run_inference_with_telemetry, ExecutionProvider, GpuBackendPreference, InferenceRequest,
+    ModelKind, OnnxVariant, PlatformTarget, RuntimeConfig, RuntimePolicy,
 };
+use unbg_image::{inspect_encoded_image, validate_encoded_image_size, MAX_ENCODED_IMAGE_BYTES};
 use unbg_installer::{install_models, verify_models, InstallRequest};
 use unbg_model_registry::{model_revision_dir, read_lockfile, resolve_model_paths, KnownModel};
-use unbg_telemetry::sink_from_env;
 use unbg_runtime_ort::LocalOrtBackend;
+use unbg_telemetry::sink_from_env;
+use walkdir::WalkDir;
 
 #[derive(Parser, Debug)]
 #[command(name = "unbg", version, about = "UNBG local model tooling")]
@@ -155,7 +156,8 @@ fn main() -> Result<()> {
                 let parsed = parse_models_for_install(&args.models)?;
                 let report = install_models(&InstallRequest {
                     model_dir: args.model_dir,
-                    install_all: parsed.is_empty() || args.models.iter().any(|m| m.eq_ignore_ascii_case("all")),
+                    install_all: parsed.is_empty()
+                        || args.models.iter().any(|m| m.eq_ignore_ascii_case("all")),
                     models: parsed,
                     hf_token_env: args.hf_token_env,
                     revision_rmbg14: "main".to_string(),
@@ -186,7 +188,10 @@ fn main() -> Result<()> {
                 execution_provider: args.execution_provider.clone(),
                 gpu_backend: args.gpu_backend.clone(),
                 benchmark_provider: args.benchmark_provider,
-                model_dir: args.model_dir.as_ref().map(|path| path.display().to_string()),
+                model_dir: args
+                    .model_dir
+                    .as_ref()
+                    .map(|path| path.display().to_string()),
             });
             let requested_model = parse_model_choice(&runtime_cfg.model)?;
             let onnx_variant = parse_onnx_variant(&runtime_cfg.onnx_variant)?;
@@ -208,7 +213,7 @@ fn main() -> Result<()> {
 
             for input_path in inputs {
                 let read_start = Instant::now();
-                let source = match std::fs::read(&input_path) {
+                let source = match read_bounded_image(&input_path) {
                     Ok(bytes) => bytes,
                     Err(err) => {
                         if bulk_mode && !args.strict {
@@ -218,12 +223,16 @@ fn main() -> Result<()> {
                             }));
                             continue;
                         }
-                        return Err(anyhow!("failed to read input {}: {}", input_path.display(), err));
+                        return Err(anyhow!(
+                            "failed to read input {}: {}",
+                            input_path.display(),
+                            err
+                        ));
                     }
                 };
                 let read_done = Instant::now();
-                let image = match image::load_from_memory(&source) {
-                    Ok(img) => img,
+                let image_size = match inspect_encoded_image(&source) {
+                    Ok(size) => size,
                     Err(err) => {
                         if bulk_mode && !args.strict {
                             results.push(serde_json::json!({
@@ -232,11 +241,15 @@ fn main() -> Result<()> {
                             }));
                             continue;
                         }
-                        return Err(anyhow!("failed to decode input {}: {}", input_path.display(), err));
+                        return Err(anyhow!(
+                            "failed to decode input {}: {}",
+                            input_path.display(),
+                            err
+                        ));
                     }
                 };
-                let decode_done = Instant::now();
-                let (width, height) = image.dimensions();
+                let inspect_done = Instant::now();
+                let (width, height) = (image_size.width, image_size.height);
 
                 let (output_cutout, output_mask) = resolve_outputs_for_input(&args, &input_path)?;
                 let request = InferenceRequest {
@@ -246,8 +259,8 @@ fn main() -> Result<()> {
                     gpu_backend: parse_gpu_backend(&runtime_cfg.gpu_backend)?,
                     benchmark_provider: runtime_cfg.benchmark_provider,
                     emit_mask_png: !args.inference_only,
-                    input_path: Some(input_path.clone()),
-                    input_bytes: Some(source.clone()),
+                    input_path: None,
+                    input_bytes: Some(source),
                     model_dir: runtime_cfg.model_dir.clone().map(PathBuf::from),
                     width,
                     height,
@@ -256,11 +269,18 @@ fn main() -> Result<()> {
                 let mut last_result = None;
                 let inference_start = Instant::now();
                 for _ in 0..args.repeat.max(1) {
-                    let result = run_inference_with_telemetry(&backend, &request, &policy, PlatformTarget::Cli, telemetry_ref)?;
+                    let result = run_inference_with_telemetry(
+                        &backend,
+                        &request,
+                        &policy,
+                        PlatformTarget::Cli,
+                        telemetry_ref,
+                    )?;
                     last_result = Some(result);
                 }
                 let inference_done = Instant::now();
-                let result = last_result.ok_or_else(|| anyhow!("inference did not produce a result"))?;
+                let result =
+                    last_result.ok_or_else(|| anyhow!("inference did not produce a result"))?;
                 total_inference_ms += inference_done.duration_since(inference_start).as_millis();
 
                 let write_start = Instant::now();
@@ -271,7 +291,11 @@ fn main() -> Result<()> {
                     std::fs::write(mask_path, &result.mask_png)?;
                 }
                 if let Some(ref cutout_path) = output_cutout {
-                    write_cutout_png(&source, &result.mask_png, &cutout_path)?;
+                    let source = request
+                        .input_bytes
+                        .as_deref()
+                        .ok_or_else(|| anyhow!("input bytes were not retained"))?;
+                    write_cutout_png(source, &result.mask_png, cutout_path)?;
                 }
                 let write_done = Instant::now();
                 total_write_ms += write_done.duration_since(write_start).as_millis();
@@ -283,12 +307,14 @@ fn main() -> Result<()> {
                         serde_json::json!(read_done.duration_since(read_start).as_millis()),
                     );
                     per.insert(
-                        "decodeInput".to_string(),
-                        serde_json::json!(decode_done.duration_since(read_done).as_millis()),
+                        "inspectInput".to_string(),
+                        serde_json::json!(inspect_done.duration_since(read_done).as_millis()),
                     );
                     per.insert(
                         "inference".to_string(),
-                        serde_json::json!(inference_done.duration_since(inference_start).as_millis()),
+                        serde_json::json!(inference_done
+                            .duration_since(inference_start)
+                            .as_millis()),
                     );
                     per.insert(
                         "writeOutputs".to_string(),
@@ -314,13 +340,24 @@ fn main() -> Result<()> {
             if args.profile {
                 timings.insert(
                     "ensureModels".to_string(),
-                    serde_json::json!(model_ensure_done.duration_since(model_ensure_start).as_millis()),
+                    serde_json::json!(model_ensure_done
+                        .duration_since(model_ensure_start)
+                        .as_millis()),
                 );
                 timings.insert("repeat".to_string(), serde_json::json!(args.repeat.max(1)));
                 timings.insert("files".to_string(), serde_json::json!(results.len()));
-                timings.insert("inference".to_string(), serde_json::json!(total_inference_ms));
-                timings.insert("writeOutputs".to_string(), serde_json::json!(total_write_ms));
-                timings.insert("total".to_string(), serde_json::json!(done.duration_since(total_start).as_millis()));
+                timings.insert(
+                    "inference".to_string(),
+                    serde_json::json!(total_inference_ms),
+                );
+                timings.insert(
+                    "writeOutputs".to_string(),
+                    serde_json::json!(total_write_ms),
+                );
+                timings.insert(
+                    "total".to_string(),
+                    serde_json::json!(done.duration_since(total_start).as_millis()),
+                );
             }
 
             println!(
@@ -334,6 +371,18 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn read_bounded_image(path: &Path) -> Result<Vec<u8>> {
+    let size = std::fs::metadata(path)?.len();
+    validate_encoded_image_size(size).map_err(anyhow::Error::msg)?;
+
+    let file = std::fs::File::open(path)?;
+    let mut bytes = Vec::with_capacity(usize::try_from(size).unwrap_or(0));
+    file.take(MAX_ENCODED_IMAGE_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    validate_encoded_image_size(bytes.len() as u64).map_err(anyhow::Error::msg)?;
+    Ok(bytes)
 }
 
 fn resolve_exec_inputs(args: &ExecArgs) -> Result<Vec<PathBuf>> {
@@ -406,7 +455,10 @@ fn is_supported_image(path: &Path) -> bool {
     matches!(ext.as_str(), "png" | "jpg" | "jpeg")
 }
 
-fn resolve_outputs_for_input(args: &ExecArgs, input_path: &Path) -> Result<(Option<PathBuf>, Option<PathBuf>)> {
+fn resolve_outputs_for_input(
+    args: &ExecArgs,
+    input_path: &Path,
+) -> Result<(Option<PathBuf>, Option<PathBuf>)> {
     if args.inference_only {
         return Ok((None, None));
     }
@@ -417,7 +469,11 @@ fn resolve_outputs_for_input(args: &ExecArgs, input_path: &Path) -> Result<(Opti
     };
 
     // When multi-input, prefer explicit --output-dir, otherwise interpret -o/-m as directories.
-    let bulk_out_dir = if multi_input { args.output_dir.clone() } else { None };
+    let bulk_out_dir = if multi_input {
+        args.output_dir.clone()
+    } else {
+        None
+    };
 
     let cutout = if let Some(spec) = args.output_cutout.clone() {
         if multi_input {
@@ -467,7 +523,11 @@ fn default_mask_filename(input: &Path) -> Result<String> {
     Ok(format!("{}_mask.png", stem))
 }
 
-fn ensure_models_for_exec(args: &ExecArgs, requested_model: ModelKind, onnx_variant: OnnxVariant) -> Result<()> {
+fn ensure_models_for_exec(
+    args: &ExecArgs,
+    requested_model: ModelKind,
+    onnx_variant: OnnxVariant,
+) -> Result<()> {
     let required_models: Vec<KnownModel> = match requested_model {
         ModelKind::Rmbg14 | ModelKind::Auto => vec![KnownModel::Rmbg14],
         ModelKind::Rmbg20 => vec![KnownModel::Rmbg20],
@@ -493,7 +553,10 @@ fn ensure_models_for_exec(args: &ExecArgs, requested_model: ModelKind, onnx_vari
     Ok(())
 }
 
-fn has_required_models_for_exec(model_dir: Option<&Path>, required_models: &[KnownModel]) -> Result<bool> {
+fn has_required_models_for_exec(
+    model_dir: Option<&Path>,
+    required_models: &[KnownModel],
+) -> Result<bool> {
     let paths = resolve_model_paths(model_dir)?;
     let lock = match read_lockfile(&paths) {
         Ok(lock) => lock,
@@ -508,7 +571,7 @@ fn has_required_models_for_exec(model_dir: Option<&Path>, required_models: &[Kno
         if !has_entry {
             return Ok(false);
         }
-        let rev_dir = model_revision_dir(&paths, *model, revision);
+        let rev_dir = model_revision_dir(&paths, *model, revision)?;
         if !directory_has_onnx_file(&rev_dir) {
             return Ok(false);
         }
@@ -581,7 +644,12 @@ fn set_ort_dylib_path_if_available() {
     }
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
-            if cfg!(target_os = "windows") && dir.to_string_lossy().to_ascii_lowercase().contains("windows\\system32") {
+            if cfg!(target_os = "windows")
+                && dir
+                    .to_string_lossy()
+                    .to_ascii_lowercase()
+                    .contains("windows\\system32")
+            {
                 continue;
             }
             let candidate = dir.join(lib_name);
@@ -609,7 +677,11 @@ fn discover_ort_from_python(lib_name: &str) -> Option<PathBuf> {
         lib_name
     );
     for exe in ["python", "python3", "py"] {
-        let output = match std::process::Command::new(exe).arg("-c").arg(&probe).output() {
+        let output = match std::process::Command::new(exe)
+            .arg("-c")
+            .arg(&probe)
+            .output()
+        {
             Ok(output) => output,
             Err(_) => continue,
         };
@@ -707,7 +779,11 @@ fn parse_gpu_backend(value: &str) -> Result<GpuBackendPreference> {
     }
 }
 
-fn write_cutout_png(source_bytes: &[u8], mask_png: &[u8], out_path: &std::path::Path) -> Result<()> {
+fn write_cutout_png(
+    source_bytes: &[u8],
+    mask_png: &[u8],
+    out_path: &std::path::Path,
+) -> Result<()> {
     let source = image::load_from_memory(source_bytes)?.to_rgba8();
     let mask = image::load_from_memory(mask_png)?.to_luma8();
     let (w, h) = source.dimensions();

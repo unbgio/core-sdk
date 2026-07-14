@@ -30,7 +30,18 @@ dependencies {
 }
 ```
 
-3. Generate Kotlin bindings from `crates/unbg-uniffi/src/unbg.udl` with `uniffi-bindgen`.
+3. Add the JNA runtime required by the generated UniFFI bindings:
+
+```kotlin
+dependencies {
+    implementation(files("libs/unbg-android.aar"))
+    implementation("net.java.dev.jna:jna:5.19.1@aar")
+}
+```
+
+The build script generates and compiles the Kotlin UniFFI bindings and the
+`com.unbg.sdk.UnbgClient` facade into the AAR; consumers do not run
+`uniffi-bindgen`.
 
 ## Smoke check
 

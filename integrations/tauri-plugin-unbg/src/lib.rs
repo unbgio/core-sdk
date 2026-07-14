@@ -1,12 +1,12 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use unbg_core::{
-    run_inference_with_telemetry, v1, ExecutionProvider, GpuBackendPreference, InferenceRequest, ModelKind, OnnxVariant, PlatformTarget,
-    RuntimeConfig, RuntimePolicy,
+    run_inference_with_telemetry, v1, ExecutionProvider, GpuBackendPreference, InferenceRequest,
+    ModelKind, OnnxVariant, PlatformTarget, RuntimeConfig, RuntimePolicy,
 };
-use unbg_image::{estimate_rgba_bytes, ImageSize};
-use unbg_telemetry::sink_from_env;
+use unbg_image::{estimate_rgba_bytes, inspect_encoded_image};
 use unbg_runtime_ort::LocalOrtBackend;
+use unbg_telemetry::sink_from_env;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TauriRemoveRequest {
@@ -34,6 +34,16 @@ pub struct TauriRemoveResponse {
 }
 
 pub fn remove_background(request: TauriRemoveRequest) -> Result<TauriRemoveResponse> {
+    let actual_size = inspect_encoded_image(&request.image_bytes)?;
+    if actual_size.width != request.width || actual_size.height != request.height {
+        return Err(anyhow!(
+            "declared dimensions {}x{} do not match image dimensions {}x{}",
+            request.width,
+            request.height,
+            actual_size.width,
+            actual_size.height
+        ));
+    }
     let runtime_cfg = unbg_core::resolve_runtime_config(RuntimeConfig {
         model: model_label(request.model).to_string(),
         onnx_variant: request
@@ -48,14 +58,11 @@ pub fn remove_background(request: TauriRemoveRequest) -> Result<TauriRemoveRespo
             .gpu_backend
             .map(|v| gpu_backend_label(v).to_string())
             .unwrap_or_else(|| "auto".to_string()),
-        benchmark_provider: request.benchmark_provider.unwrap_or(true),
+        benchmark_provider: request.benchmark_provider.unwrap_or(false),
         model_dir: request.model_dir.clone(),
     });
     let backend = LocalOrtBackend::default();
-    let estimated_bytes = estimate_rgba_bytes(ImageSize {
-        width: request.width,
-        height: request.height,
-    });
+    let estimated_bytes = estimate_rgba_bytes(actual_size);
     let policy = RuntimePolicy {
         max_inference_pixels: request.max_inference_pixels,
         max_latency_ms: 1_500,
@@ -100,6 +107,7 @@ pub fn remove_background(request: TauriRemoveRequest) -> Result<TauriRemoveRespo
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TauriCommandRequest {
     pub image_bytes: Vec<u8>,
     pub width: u32,
@@ -114,6 +122,7 @@ pub struct TauriCommandRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TauriCommandResponse {
     pub model_used: String,
     pub width: u32,
@@ -124,7 +133,9 @@ pub struct TauriCommandResponse {
     pub fallback_used: bool,
 }
 
-pub fn remove_background_command(request: TauriCommandRequest) -> std::result::Result<TauriCommandResponse, String> {
+pub fn remove_background_command(
+    request: TauriCommandRequest,
+) -> std::result::Result<TauriCommandResponse, String> {
     let v1_result = remove_background_v1(v1::RemoveBackgroundRequest {
         image_bytes: request.image_bytes,
         width: request.width,
@@ -148,7 +159,9 @@ pub fn remove_background_command(request: TauriCommandRequest) -> std::result::R
     })
 }
 
-pub fn remove_background_v1(request: v1::RemoveBackgroundRequest) -> std::result::Result<v1::RemoveBackgroundResponse, String> {
+pub fn remove_background_v1(
+    request: v1::RemoveBackgroundRequest,
+) -> std::result::Result<v1::RemoveBackgroundResponse, String> {
     let response = remove_background(TauriRemoveRequest {
         image_bytes: request.image_bytes,
         width: request.width,
@@ -175,7 +188,9 @@ pub fn remove_background_v1(request: v1::RemoveBackgroundRequest) -> std::result
 
 #[cfg(feature = "tauri-plugin")]
 #[tauri::command]
-fn tauri_remove_background_command(request: TauriCommandRequest) -> std::result::Result<TauriCommandResponse, String> {
+fn tauri_remove_background_command(
+    request: TauriCommandRequest,
+) -> std::result::Result<TauriCommandResponse, String> {
     remove_background_command(request)
 }
 
@@ -198,7 +213,9 @@ fn parse_model_alias(raw: &str) -> std::result::Result<ModelKind, String> {
     }
 }
 
-fn parse_execution_provider_opt(raw: Option<&str>) -> std::result::Result<Option<ExecutionProvider>, String> {
+fn parse_execution_provider_opt(
+    raw: Option<&str>,
+) -> std::result::Result<Option<ExecutionProvider>, String> {
     match raw.map(|value| value.to_ascii_lowercase()) {
         None => Ok(None),
         Some(value) => match value.as_str() {
@@ -213,7 +230,9 @@ fn parse_execution_provider_opt(raw: Option<&str>) -> std::result::Result<Option
     }
 }
 
-fn parse_gpu_backend_opt(raw: Option<&str>) -> std::result::Result<Option<GpuBackendPreference>, String> {
+fn parse_gpu_backend_opt(
+    raw: Option<&str>,
+) -> std::result::Result<Option<GpuBackendPreference>, String> {
     match raw.map(|value| value.to_ascii_lowercase()) {
         None => Ok(None),
         Some(value) => match value.as_str() {

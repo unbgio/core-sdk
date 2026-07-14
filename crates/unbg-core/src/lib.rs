@@ -115,7 +115,11 @@ pub trait TelemetrySink: Send + Sync {
 }
 
 pub trait InferenceBackend: Send + Sync {
-    fn infer(&self, request: &InferenceRequest, selected_model: ModelKind) -> Result<InferenceResult, CoreError>;
+    fn infer(
+        &self,
+        request: &InferenceRequest,
+        selected_model: ModelKind,
+    ) -> Result<InferenceResult, CoreError>;
 }
 
 #[derive(Debug, Error)]
@@ -180,7 +184,7 @@ impl Default for RuntimeConfig {
             onnx_variant: "fp16".to_string(),
             execution_provider: "auto".to_string(),
             gpu_backend: "auto".to_string(),
-            benchmark_provider: true,
+            benchmark_provider: false,
             model_dir: None,
         }
     }
@@ -236,7 +240,10 @@ pub mod v1 {
     }
 }
 
-pub fn resolve_model(request: &InferenceRequest, policy: &RuntimePolicy) -> Result<ModelKind, CoreError> {
+pub fn resolve_model(
+    request: &InferenceRequest,
+    policy: &RuntimePolicy,
+) -> Result<ModelKind, CoreError> {
     let pixels = request.width.saturating_mul(request.height);
     match request.requested_model {
         ModelKind::Rmbg20 if !policy.allow_rmbg20 => Err(CoreError::Rmbg20Disabled),
@@ -292,7 +299,10 @@ pub fn run_inference_with_telemetry(
                     detail: Some(format!(
                         "provider={},backend={},fallback={}",
                         result.execution_provider_selected,
-                        result.gpu_backend_selected.clone().unwrap_or_else(|| "none".to_string()),
+                        result
+                            .gpu_backend_selected
+                            .clone()
+                            .unwrap_or_else(|| "none".to_string()),
                         result.fallback_used
                     )),
                 });
@@ -321,7 +331,11 @@ mod tests {
     struct StubBackend;
 
     impl InferenceBackend for StubBackend {
-        fn infer(&self, request: &InferenceRequest, selected_model: ModelKind) -> Result<InferenceResult, CoreError> {
+        fn infer(
+            &self,
+            request: &InferenceRequest,
+            selected_model: ModelKind,
+        ) -> Result<InferenceResult, CoreError> {
             Ok(InferenceResult {
                 model_used: selected_model,
                 mask_png: vec![0, 1, 2],
@@ -374,7 +388,13 @@ mod tests {
             height: 100,
         };
         let policy = RuntimePolicy::default();
-        let result = run_inference(&StubBackend, &request, &policy).expect("inference should succeed");
+        let result =
+            run_inference(&StubBackend, &request, &policy).expect("inference should succeed");
         assert_eq!(result.model_used, ModelKind::Rmbg20);
+    }
+
+    #[test]
+    fn provider_benchmarking_is_disabled_by_default() {
+        assert!(!RuntimeConfig::default().benchmark_provider);
     }
 }

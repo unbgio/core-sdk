@@ -109,6 +109,24 @@ try {
     throw "Could not download asset for target $target in $Repo ($Version). Expected URL: $assetUrl"
   }
 
+  if ($env:UNBG_INSTALL_SKIP_VERIFY -ne "1") {
+    $checksumPath = "$archivePath.sha256"
+    try {
+      Invoke-WebRequest -Uri "$assetUrl.sha256" -OutFile $checksumPath
+    }
+    catch {
+      throw "Could not download checksum for $assetUrl. Set UNBG_INSTALL_SKIP_VERIFY=1 only if you accept an unverified archive."
+    }
+    $expectedHash = ((Get-Content -Raw $checksumPath).Trim() -split "\s+")[0].ToLowerInvariant()
+    if ($expectedHash -notmatch "^[0-9a-f]{64}$") {
+      throw "Release checksum has an invalid format."
+    }
+    $actualHash = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne $expectedHash) {
+      throw "Release checksum mismatch for $archiveName."
+    }
+  }
+
   Write-Host "Extracting $archiveName"
   Expand-ReleaseArchive -ArchivePath $archivePath -DestinationPath $extractDir
 

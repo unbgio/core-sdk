@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-ios-xcframework:
-    runs-on: macos-latest
+    runs-on: macos-26
     env:
       UNBG_SIGNING_KEY_B64: ${{ secrets.UNBG_SIGNING_KEY_B64 || '' }}
     permissions:
@@ -16,11 +16,15 @@ jobs:
       attestations: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Select Xcode 26.6
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
       - name: Install uniffi-bindgen
-        run: cargo install uniffi --version 0.30.0 --features cli --bin uniffi-bindgen --locked
+        run: cargo install uniffi --version 0.32.0 --features cli --bin uniffi-bindgen --locked
       - name: Add Apple Rust targets
         run: |
           rustup target add aarch64-apple-ios
@@ -28,27 +32,37 @@ jobs:
           rustup target add x86_64-apple-ios
       - name: Build XCFramework
         run: bash scripts/build-ios.sh
-      - name: Archive XCFramework
+      - name: Validate Swift package consumer
         run: |
-          cd integrations/ios-unbg/dist
-          ditto -c -k --sequesterRsrc --keepParent UNBG.xcframework UNBG.xcframework.zip
+          cd integrations/ios-unbg
+          swift package describe
+          xcodebuild -scheme UNBG -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/unbg-ios-consumer" CODE_SIGNING_ALLOWED=NO build
+      - name: Stage and archive consumer SDK
+        run: |
+          SDK_DIR="integrations/ios-unbg/dist/UNBG-SDK"
+          mkdir -p "$SDK_DIR/dist"
+          cp -R integrations/ios-unbg/dist/UNBG.xcframework "$SDK_DIR/dist/"
+          cp -R integrations/ios-unbg/Sources "$SDK_DIR/"
+          cp integrations/ios-unbg/Package.swift integrations/ios-unbg/UNBG.podspec integrations/ios-unbg/README.md "$SDK_DIR/"
+          cp LICENSE MODEL_LICENSES.md "$SDK_DIR/"
+          ditto -c -k --sequesterRsrc --keepParent "$SDK_DIR" integrations/ios-unbg/dist/UNBG-SDK.zip
       - name: Generate manifest
-        run: bash scripts/release-manifest.sh integrations/ios-unbg/dist/release-manifest.json integrations/ios-unbg/dist/UNBG.xcframework.zip
+        run: bash scripts/release-manifest.sh integrations/ios-unbg/dist/release-manifest.json integrations/ios-unbg/dist/UNBG-SDK.zip
       - name: Sign artifacts
         if: ${{ env.UNBG_SIGNING_KEY_B64 != '' }}
-        run: bash scripts/sign-artifacts.sh integrations/ios-unbg/dist/UNBG.xcframework.zip integrations/ios-unbg/dist/release-manifest.json
+        run: bash scripts/sign-artifacts.sh integrations/ios-unbg/dist/UNBG-SDK.zip integrations/ios-unbg/dist/release-manifest.json
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: |
-            integrations/ios-unbg/dist/UNBG.xcframework.zip
+            integrations/ios-unbg/dist/UNBG-SDK.zip
             integrations/ios-unbg/dist/release-manifest.json
       - name: Upload XCFramework artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unbg-ios-xcframework
           path: |
             integrations/ios-unbg/dist/UNBG.xcframework
-            integrations/ios-unbg/dist/UNBG.xcframework.zip
+            integrations/ios-unbg/dist/UNBG-SDK.zip
             integrations/ios-unbg/dist/release-manifest.json
             integrations/ios-unbg/dist/*.sig

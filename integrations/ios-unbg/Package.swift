@@ -1,21 +1,21 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.3
 import PackageDescription
 
 let package = Package(
     name: "UNBG",
     platforms: [.iOS(.v13)],
     products: [
-        .library(name: "UNBG", targets: ["UNBG", "UNBGGenerated"])
+        .library(name: "UNBG", targets: ["UNBG"])
     ],
     targets: [
-        .target(
-            name: "UNBG",
-            path: "Sources",
-            publicHeadersPath: nil
+        .binaryTarget(
+            name: "unbgFFI",
+            path: "dist/UNBG.xcframework"
         ),
         .target(
-            name: "UNBGGenerated",
-            path: "generated"
+            name: "UNBG",
+            dependencies: ["unbgFFI"],
+            path: "Sources/UNBG"
         )
     ]
 )

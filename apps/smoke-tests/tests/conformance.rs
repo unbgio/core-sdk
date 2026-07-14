@@ -20,6 +20,8 @@ fn adapters_produce_consistent_mask_shape() -> Result<()> {
     std::env::set_var("UNBG_ALLOW_PLACEHOLDER", "1");
     set_ort_dylib_path_if_available();
     let sample = build_sample_png()?;
+    let empty_model_dir = tempfile::tempdir()?;
+    let empty_model_path = empty_model_dir.path().to_string_lossy().into_owned();
 
     let tauri = tauri_plugin_unbg::remove_background(tauri_plugin_unbg::TauriRemoveRequest {
         image_bytes: sample.clone(),
@@ -31,7 +33,7 @@ fn adapters_produce_consistent_mask_shape() -> Result<()> {
         gpu_backend: None,
         benchmark_provider: None,
         onnx_variant: None,
-        model_dir: None,
+        model_dir: Some(empty_model_path.clone()),
     })?;
 
     let android = android_unbg::process_image(android_unbg::AndroidBridgeRequest {
@@ -40,7 +42,7 @@ fn adapters_produce_consistent_mask_shape() -> Result<()> {
         height: 8,
         model: ModelKind::Auto,
         onnx_variant: None,
-        model_dir: None,
+        model_dir: Some(empty_model_path.clone()),
         execution_provider: None,
         gpu_backend: None,
         benchmark_provider: None,
@@ -52,7 +54,7 @@ fn adapters_produce_consistent_mask_shape() -> Result<()> {
         height: 8,
         model: ModelKind::Auto,
         onnx_variant: None,
-        model_dir: None,
+        model_dir: Some(empty_model_path),
         execution_provider: None,
         gpu_backend: None,
         benchmark_provider: None,
@@ -86,7 +88,11 @@ fn set_ort_dylib_path_if_available() {
     }
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
-            if dir.to_string_lossy().to_ascii_lowercase().contains("windows\\system32") {
+            if dir
+                .to_string_lossy()
+                .to_ascii_lowercase()
+                .contains("windows\\system32")
+            {
                 continue;
             }
             let candidate = dir.join(lib_name);
@@ -104,7 +110,11 @@ fn discover_ort_from_python(lib_name: &str) -> Option<std::path::PathBuf> {
         lib_name
     );
     for exe in ["python", "python3", "py"] {
-        let output = match std::process::Command::new(exe).arg("-c").arg(&probe).output() {
+        let output = match std::process::Command::new(exe)
+            .arg("-c")
+            .arg(&probe)
+            .output()
+        {
             Ok(output) => output,
             Err(_) => continue,
         };

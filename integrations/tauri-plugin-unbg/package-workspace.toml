@@ -1,0 +1,25 @@
+[workspace]
+members = [
+    "crates/unbg-core",
+    "crates/unbg-image",
+    "crates/unbg-model-registry",
+    "crates/unbg-runtime-ort",
+    "crates/unbg-telemetry",
+    "integrations/tauri-plugin-unbg",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "0.1.0"
+
+[workspace.dependencies]
+anyhow = "1.0.103"
+dirs = "6.0.0"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
+ndarray = "0.17.2"
+reqwest = { version = "0.13.4", default-features = false, features = ["blocking", "json", "rustls"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+thiserror = "2.0.18"

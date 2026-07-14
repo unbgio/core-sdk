@@ -80,7 +80,11 @@ fn set_ort_dylib_path_if_available() {
     }
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
-            if dir.to_string_lossy().to_ascii_lowercase().contains("windows\\system32") {
+            if dir
+                .to_string_lossy()
+                .to_ascii_lowercase()
+                .contains("windows\\system32")
+            {
                 continue;
             }
             let candidate = dir.join(lib_name);
@@ -98,7 +102,11 @@ fn discover_ort_from_python(lib_name: &str) -> Option<std::path::PathBuf> {
         lib_name
     );
     for exe in ["python", "python3", "py"] {
-        let output = match std::process::Command::new(exe).arg("-c").arg(&probe).output() {
+        let output = match std::process::Command::new(exe)
+            .arg("-c")
+            .arg(&probe)
+            .output()
+        {
             Ok(output) => output,
             Err(_) => continue,
         };

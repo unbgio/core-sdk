@@ -89,6 +89,38 @@ if ! curl -fsSL "$asset_url" -o "$archive_path"; then
   exit 1
 fi
 
+if [ "${UNBG_INSTALL_SKIP_VERIFY:-0}" != "1" ]; then
+  checksum_path="$archive_path.sha256"
+  if ! curl -fsSL "$asset_url.sha256" -o "$checksum_path"; then
+    echo "Could not download checksum for $asset_url." >&2
+    echo "Set UNBG_INSTALL_SKIP_VERIFY=1 only if you accept an unverified archive." >&2
+    exit 1
+  fi
+  expected_hash="$(awk 'NR == 1 { print $1 }' "$checksum_path")"
+  if [ "${#expected_hash}" -ne 64 ]; then
+    echo "Release checksum has an invalid format." >&2
+    exit 1
+  fi
+  case "$expected_hash" in
+    *[!0-9a-fA-F]*)
+      echo "Release checksum has an invalid format." >&2
+      exit 1
+      ;;
+  esac
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual_hash="$(sha256sum "$archive_path" | awk '{ print $1 }')"
+  elif command -v shasum >/dev/null 2>&1; then
+    actual_hash="$(shasum -a 256 "$archive_path" | awk '{ print $1 }')"
+  else
+    echo "sha256sum or shasum is required to verify the release archive." >&2
+    exit 1
+  fi
+  if [ "$(printf '%s' "$actual_hash" | tr 'A-F' 'a-f')" != "$(printf '%s' "$expected_hash" | tr 'A-F' 'a-f')" ]; then
+    echo "Release checksum mismatch for $archive_name." >&2
+    exit 1
+  fi
+fi
+
 echo "Extracting $archive_name"
 extract_archive "$archive_path" "$extract_dir"
 

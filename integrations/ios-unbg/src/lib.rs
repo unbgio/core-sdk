@@ -47,7 +47,9 @@ pub fn process_image(request: IosBridgeRequest) -> Result<IosBridgeResponse> {
     })
 }
 
-pub fn process_image_v1(request: v1::RemoveBackgroundRequest) -> Result<v1::RemoveBackgroundResponse> {
+pub fn process_image_v1(
+    request: v1::RemoveBackgroundRequest,
+) -> Result<v1::RemoveBackgroundResponse> {
     let out = remove_background(FfiRemoveBackgroundRequest {
         image_bytes: request.image_bytes,
         width: request.width,

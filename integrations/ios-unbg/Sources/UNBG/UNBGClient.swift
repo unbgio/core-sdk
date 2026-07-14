@@ -20,7 +20,7 @@ public struct UNBGRemoveBackgroundRequest {
         onnxVariant: String? = "fp16",
         executionProvider: String? = "auto",
         gpuBackend: String? = "auto",
-        benchmarkProvider: Bool? = true,
+        benchmarkProvider: Bool? = false,
         modelDir: String? = nil,
         maxInferencePixels: UInt32? = 1_500_000
     ) {

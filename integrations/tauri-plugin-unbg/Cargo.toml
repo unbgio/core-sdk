@@ -3,6 +3,8 @@ name = "tauri-plugin-unbg"
 edition.workspace = true
 license.workspace = true
 version.workspace = true
+build = "build.rs"
+links = "tauri-plugin-unbg"
 
 [features]
 default = []
@@ -12,11 +14,14 @@ tauri-plugin = ["dep:tauri"]
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tauri = { version = "2", optional = true, default-features = false }
+tauri = { version = "2.11.5", optional = true, default-features = false }
 unbg-core = { path = "../../crates/unbg-core" }
 unbg-image = { version = "0.1.0", path = "../../crates/unbg-image" }
 unbg-telemetry = { path = "../../crates/unbg-telemetry" }
 unbg-runtime-ort = { path = "../../crates/unbg-runtime-ort" }
+
+[build-dependencies]
+tauri-plugin = { version = "2.6.3", features = ["build"] }
 
 [dev-dependencies]
 image.workspace = true

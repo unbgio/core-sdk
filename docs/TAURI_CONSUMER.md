@@ -23,7 +23,7 @@ In your Tauri app `Cargo.toml`:
 
 ```toml
 [dependencies]
-tauri-plugin-unbg = { path = "../path/to/node-sdk/integrations/tauri-plugin-unbg", features = ["tauri-plugin"] }
+tauri-plugin-unbg = { path = "../path/to/core-sdk/integrations/tauri-plugin-unbg", features = ["tauri-plugin"] }
 ```
 
 In your Tauri Rust entrypoint:
@@ -64,3 +64,6 @@ const response = await removeBackground(invoke, {
 - `model: "quality"` maps to `rmbg-2.0`.
 - `modelDir` should point to the root bundle directory created by `prepare-model-bundle.sh`.
 - If `modelDir` is not passed, runtime uses default model paths.
+- Provider benchmarking is off by default to keep ONNX Runtime memory bounded.
+- Model weights have separate non-commercial/commercial terms; review
+  `MODEL_LICENSES.md` before distributing a bundle.

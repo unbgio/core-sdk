@@ -14,9 +14,13 @@ coreml = ["ort/coreml"]
 anyhow.workspace = true
 image.workspace = true
 ndarray.workspace = true
-ort = { version = "2.0.0-rc.10", features = ["ndarray", "download-binaries", "load-dynamic", "copy-dylibs"] }
 serde.workspace = true
 serde_json.workspace = true
-walkdir.workspace = true
 unbg-model-registry = { path = "../unbg-model-registry" }
 unbg-core = { path = "../unbg-core" }
+
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+ort = { version = "2.0.0-rc.12", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-rustls", "api-24"] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+ort = { version = "2.0.0-rc.12", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-rustls", "load-dynamic", "copy-dylibs", "api-24"] }

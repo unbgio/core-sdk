@@ -45,7 +45,7 @@ export async function removeBackground(
   return invoke<RemoveBackgroundResponse>(TAURI_UNBG_COMMANDS_V1.removeBackground, {
     request: {
       model: "auto",
-      benchmarkProvider: true,
+      benchmarkProvider: false,
       ...request
     }
   });
